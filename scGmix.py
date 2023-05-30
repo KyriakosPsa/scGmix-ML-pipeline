@@ -16,7 +16,7 @@ sc.set_figure_params(scanpy=True, dpi=80, dpi_save=300,
                     format='png', ipython_format='png2x')
 
 
-class scGmix():
+class scgmix():
     """Single Cell Gaussian mixture model pipeline
     Instance Methods:
     ----------
@@ -131,7 +131,11 @@ class scGmix():
       def _compute():
         """Compute the dimensionality reduction representation and the optimal number of components"""
         # Pca is needed as initilization for TSNE, UMAP even if its not picked as the method the user chooses
-        sc.pp.pca(self.adata, svd_solver ='arpack',use_highly_variable = use_highly_variable, n_comps = n_pcs)
+        if use_highly_variable:
+          # if we use higly variable limit the n_comps of the initial pca to the number of higly variable genes - 1
+          sc.pp.pca(self.adata, svd_solver ='arpack',use_highly_variable = use_highly_variable, n_comps = (self.adata.var['highly_variable'] == True).sum() + -1)
+        else:
+          sc.pp.pca(self.adata, svd_solver ='arpack',use_highly_variable = use_highly_variable, n_comps = n_pcs)
         explained_variance = self.adata.uns['pca']['variance']
         # Check for the selected principal componenet selection method
         if pc_selection_method == "screeplot":
@@ -172,7 +176,7 @@ class scGmix():
         else:
           raise ValueError("Invalid dimensionality reduction method, choose between PCA, TSNE, UMAP")
 
-      def _plot(self):
+      def _plot():
         """plot the results"""
         if method == "PCA":
           sc.pl.pca(self.adata,color="total_counts",add_outline = True, size = 100, title= "PCA, cell total expression counts colormap",show=False)
@@ -188,10 +192,11 @@ class scGmix():
       #-----------------------------------------
       _compute()
       if plot_result:
-        _plot(self)
+        _plot()
 
 ### MAIN #####
-adata = sc.read_csv("datasets/dataset1.csv")
-pipeline = scGmix(adata) # Creating an instance of Preprocess class
-pipeline.preprocess(mads_away=5,feature_selection=False)
-pipeline.dimreduction(plot_result=True,method="UMAP", pc_selection_method="kaiser")
+adata = sc.read_csv("datasets/dataset2.csv")
+pipeline = scgmix(adata) # Creating an instance of Preprocess class
+pipeline.preprocess(mads_away=5,feature_selection=True)
+pipeline.dimreduction(plot_result=True,method="UMAP", pc_selection_method="variance", use_highly_variable=True)
+print(pipeline.adata)
