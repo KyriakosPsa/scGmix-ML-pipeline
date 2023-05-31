@@ -30,6 +30,21 @@ def hist_subplot(data1,data2,xlabel1,xlabel2,title1,title2,plot_median = False):
   plt.tight_layout()
   fig.show()
 
+
+def plot_bic(components,values,idx,criterion):
+  """
+  Create a figure of the BIC values per number of GMM components
+  """
+  plt.figure(figsize=(8,8))
+  sns.lineplot(x = np.arange(1,components+1,1), y =values, markers=".")
+  plt.axvline(x = idx, color = 'red',label = "Optimal number of components",linestyle="dashed" )
+  plt.title(f"{criterion} values per # of components")
+  plt.xlabel(f"Number of components")
+  plt.xticks(np.arange(1,components+1,1))
+  plt.ylabel(f"{criterion} score")
+  plt.legend()
+  plt.show()
+
 def plot_pca(adata,title = "PCA", save = False):
   """
   Create a figure of the the two PCs after pca preprocessing on the adata object using scanpy
@@ -57,31 +72,6 @@ def plot_pca_variance(variance_ratio,n_components,variance_cutoff = 0.90,verbose
   #Show the PCs kept with this method
   if verbose:
     print(f"Variance Threshold of {variance_cutoff}% keeps: ",(cummulative_variance[cummulative_variance <= variance_cutoff]).shape[0], "PCs")
-
-def plot_clusters(X, labels, method = "PCA"):
-    plt.figure(figsize=(6, 6))
-    plt.title(f'{method} GMM clustered data')
-    
-    # Scatter plot of data points
-    sns.scatterplot(x=X[:, 0], y=X[:, 1], hue=labels, palette="tab10", edgecolors="black")
-    
-    # Compute mean points for each cluster
-    unique_labels = np.unique(labels)
-    cluster_means = [np.mean(X[labels == label], axis=0) for label in unique_labels]
-    cluster_means = np.array(cluster_means)
-    
-    # Plot mean points
-    plt.scatter(cluster_means[:, 0], cluster_means[:, 1], marker='X', color='black', s=100, label='Component mean')
-    # Adjust plot settings
-    if method == "PCA":
-      plt.xlabel('PC1')
-      plt.ylabel('PC2')
-    else:
-      plt.xlabel(f'{method}1')
-      plt.ylabel(f'{method}2')
-    plt.grid()
-    plt.legend(fontsize = 11)
-    plt.show()
 
 def make_ellipses(gmm, X, labels, title = "PCA"):
     num_components = len(gmm.means_)
