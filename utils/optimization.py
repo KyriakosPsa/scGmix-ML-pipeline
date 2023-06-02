@@ -131,7 +131,7 @@ def optimizeGMM(X,metric = "BIC",max_num_components = 10,precomputed_means=None,
     # if means are precomputed just optimize the BIC
     if precomputed:
       pruner = optuna.pruners.HyperbandPruner()
-      sampler = optuna.samplers.RandomSampler(seed=seed)
+      sampler = optuna.samplers.TPESampler(seed=seed,multivariate=True)
       study = optuna.create_study(direction="minimize", sampler=sampler, pruner=pruner)
       study.optimize(bicTrial, n_trials=n_trials, show_progress_bar=show_progress_bar)
       best_params = study.best_params
@@ -140,7 +140,7 @@ def optimizeGMM(X,metric = "BIC",max_num_components = 10,precomputed_means=None,
     else:   
       for components in range(1, max_num_components + 1):
         pruner = optuna.pruners.HyperbandPruner()
-        sampler = optuna.samplers.RandomSampler(seed=seed)
+        sampler = optuna.samplers.TPESampler(seed=seed,multivariate=True)
         study = optuna.create_study(direction="minimize", sampler=sampler, pruner=pruner)
         study.optimize(lambda trial: bicTrial(trial, components), n_trials=n_trials, show_progress_bar=show_progress_bar)
       # Get the best parameters and objective value
