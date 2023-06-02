@@ -18,7 +18,7 @@ File Dependancies:
 
 Please make sure you have these dependencies installed before running the pipeline.
 # Pipeline overview
-![Alt Text](./scGmix.png)
+![Alt Text](./schematic.png)
 
 # Usage
 To use the scgmix pipeline, follow the steps below:
