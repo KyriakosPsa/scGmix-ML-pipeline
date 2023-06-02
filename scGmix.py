@@ -4,11 +4,7 @@ import scanpy as sc
 import anndata as adata
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.cluster import SpectralClustering 
-from sklearn.mixture import GaussianMixture
 from kneed import KneeLocator
-import warnings
-warnings.filterwarnings("ignore")
 import pickle
 # Consider aesthetics
 plt.rcParams['mathtext.fontset'] = 'stix'
@@ -18,21 +14,18 @@ plt.rcParams.update({'font.size': 18})
 sc.set_figure_params(scanpy=True, dpi=80, dpi_save=300, 
                     frameon=True, vector_friendly=True, fontsize=18, figsize=(8,8),
                     format='png', ipython_format='png2x')
-#File dependancies 
-from utils.optimization import optimizeGMM, optimizeSpectral  
-from utils.plotting import plot_bic
+
 
 class scgmix():
     """Single Cell Gaussian mixture model pipeline
     Instance Methods:
-    -----------------
+    ----------
     `preprocess`
     `dimreduction`
     """
-    def __init__(self,adata, rand_seed = 42, model = None):
+    def __init__(self,adata, _model = None):
         self.adata = adata
-        self.model = model
-        self.rand_seed = rand_seed
+        self._model = _model
         self.row, self.cols = self.adata.shape
 
 #### Utility ####################################################################################################
@@ -41,9 +34,9 @@ class scgmix():
 
     def savemodel(self,filenamepath):
       with open(filenamepath, "wb") as file:
-          pickle.dump(self.model, file)
+          pickle.dump(self.m_model, file)
 
-#### STAGE 1: PREPROCESSING INSTANCE METHOD ################################################################################################################
+#### STAGE 1: PREPROCESSING INSTANCE METHOD ########################################################################
     def preprocess(self, mads_away = 5,feature_selection = False, min_mean=0.0125, max_mean=3, min_disp=0.5):
       """
       Performs preprocessing steps on the data.
@@ -100,7 +93,7 @@ class scgmix():
       if feature_selection:
         sc.pp.highly_variable_genes(self.adata, min_mean=0.0125, max_mean=3, min_disp=0.5)
 
-#### STAGE 2: DIMENSIONALITY REDUCTION ISNTANCE METHOD ####################################################################################################################
+#### STAGE 2: Dimensionality reduction ####################################################
     def dimreduction(self,method = "PCA", n_pcs = 100, pc_selection_method = "screeplot",  n_neighbors=15, min_dist = 0.1,
                   use_highly_variable = False,variance_threshold = 90, verbose = True,plot_result = False):
       """
@@ -157,11 +150,10 @@ class scgmix():
             print(f"{pc_selection_method} selected {optimal_pcs.shape[0]} principal components out of {n_pcs}")
         # Check the dimensionality reduction method
         if method == "PCA":
-          # Restrict the componenets to the optimal number identified by `pc_selection_method`
           self.adata.uns['pca']['variance'] = self.adata.uns['pca']['variance'][optimal_pcs.shape[0]]
           self.adata.obsm['X_pca'] = self.adata.obsm['X_pca'][:,:optimal_pcs.shape[0]]
         elif method == "TSNE":
-          # Run tsne with the suggested parameters from [The art of using t-SNE for single-cell transcriptomics]
+          # Run tsne with the suggested paramters from [The art of using t-SNE for single-cell transcriptomics]
           n = self.row/100
           if n/100 > 30:
             perplexity = 30 + n/100 
@@ -172,12 +164,15 @@ class scgmix():
           else:
             learning_rate = 200
           sc.tl.tsne(self.adata, 
-                    n_pcs = optimal_pcs.shape[0], perplexity = perplexity, early_exaggeration=12, 
-                    learning_rate = learning_rate, random_state = self.rand_seed, use_fast_tsne = False)
+                    n_pcs = optimal_pcs.shape[0], 
+                    perplexity = perplexity, 
+                    early_exaggeration=12, 
+                    learning_rate = learning_rate, 
+                    random_state = 42, 
+                    use_fast_tsne = False)
         elif method  == "UMAP":
-          # Parameters for UMAP are up to the user
-          sc.pp.neighbors(self.adata, n_neighbors=n_neighbors, random_state= self.rand_seed, n_pcs= optimal_pcs.shape[0])
-          sc.tl.umap(self.adata, min_dist= min_dist, random_state= self.rand_seed)
+          sc.pp.neighbors(self.adata, n_neighbors=n_neighbors, random_state=42, n_pcs= optimal_pcs.shape[0])
+          sc.tl.umap(self.adata, min_dist= min_dist, random_state=42)
         else:
           raise ValueError("Invalid dimensionality reduction method, choose between PCA, TSNE, UMAP")
 
@@ -199,110 +194,9 @@ class scgmix():
       if plot_result:
         _plot()
 
-### STAGE 3: CLUSTERING ####################################################################################################################
-    def mix(self,representation = "X_pca",preclustering_method = "spectral",  enable_preclustering = False, leiden_resolution = 1.0,
-            criterion = "BIC" , n_trials = 100, verbose = True, max_iter = 1000,max_num_components = 5, user_means = None,show_progress_bar = True):
-      """
-      Performs clustering on the data using Gaussian Mixture Models (GMM).
-      Parameters:
-        - representation (str): The data representation to use for clustering. Options are "PCA", "TSNE", or "UMAP". Default is "PCA".
-        - preclustering_method (str): The preclustering method to use for initialization. Options are "spectral" or "leiden". Default is "spectral".
-        - enable_preclustering (bool): Whether to compute means for GMM initialization using preclustering. Default is False.
-        - leiden_resolution (float): The resolution parameter for Leiden clustering. Ignored if preclustering_method is not "leiden". Default is 1.0.
-        - criterion (str): The criterion to optimize for GMM selection. Options are "BIC" or "AIC". Default is "BIC".
-        - n_trials (int): The number of trials for GMM optimization. Default is 100.
-        - verbose (bool): Whether to print the BIC value of the optimized GMM and plot the BIC/component lineplot. Default is True.
-        - max_iter (int): The maximum number of iterations for GMM fitting. Default is 1000, used both for the final fitting and trials.
-        - max_num_components (int): The maximum number of components to consider for GMM optimization. Default is 5, ignored if enable_preclustering = True.
-        - user_means (ndarray): User-defined means for GMM initialization. Ignored if preclustering_method is not "user". Default is None.
-        - show_progress_bar (bool): Whether to show a progress bar during optimization. Default is True.
-
-      Returns:
-        - gmm_study (optuna.Study): Optuna study object containing the optimization results if return_study is True.
-      """
-
-      # PRIVATE clustering methods########
-      def _maxprevnextdiff(list):
-        """Returns the elemnt with the largest combined difference with the next and previous element of a list"""
-        arr = np.array(list)
-        total_diff = np.diff(arr)
-        max_diff_index = np.argmin(total_diff)  
-        return max_diff_index + 1 # +1 to account for the correct index
-
-      def _computemeans(X,labels):
-        """Finds the cluster centers after labels have been identified with preclustering"""
-        unique_labels = np.unique(labels)
-        cluster_means = [np.mean(X[labels == label], axis=0) for label in unique_labels]
-        cluster_means = np.array(cluster_means)  
-        return cluster_means
-      
-      if representation == "X_pca":
-        X = self.adata.obsm['X_pca']
-      elif representation == "X_tsne":
-        X = self.adata.obsm['X_tsne']
-      elif representation  == "X_umap":
-        X = self.adata.obsm['X_umap']
-      else:
-        raise ValueError("Invalid data representation, choose between X_pca, X_tsne, X_umap")
-      # Precomputed mixture components means with preclustering 
-      if enable_preclustering:
-        # Precompute mixture components means with spectral clustering
-        if preclustering_method == "spectral":
-          best_params, _ = optimizeSpectral(X = X, k_range =  [2,30], neighbors_range = [3,40],affinity = "nearest_neighbors",show_progress_bar=show_progress_bar, 
-                                                                    eval_metric = "silhouette_score",direction = "maximize", n_trials=50, seed = self.rand_seed)
-          sp = SpectralClustering(n_clusters=best_params['n_clusters'],
-                                  n_neighbors=best_params['n_neighbors'],
-                                  affinity="nearest_neighbors",
-                                  assign_labels= 'cluster_qr')
-          labels = sp.fit_predict(X)
-          means = _computemeans(X,labels)
-        # Precomputed mixture components means with leiden clustering 
-        elif preclustering_method == "leiden":
-          sc.pp.neighbors(self.adata, use_rep=representation)
-          sc.tl.leiden(self.adata, resolution=leiden_resolution, key_added="leiden_"+ representation)
-          labels = self.adata.obs["leiden_" + representation]
-          means = _computemeans(X,labels)
-        elif preclustering_method == "user":
-          means = user_means
-        else:
-          raise ValueError("Invalid preclustering method, choose between spectral, leiden or user")
-        # Optimized the GMM with the precomputed means
-        best_params = optimizeGMM(X = X,metric = criterion,precomputed_means=means,n_trials=n_trials, seed=self.rand_seed,max_iter=max_iter,
-                                  show_progress_bar =show_progress_bar,precomputed = True)
-        # optimize the GMM model
-        gmm = GaussianMixture(n_components=means.shape[0], 
-                              means_init=means,
-                              covariance_type= best_params['covariance_type'],
-                              random_state= best_params['random_state'],
-                              max_iter=max_iter)
-        self.model = gmm.fit(X)
-        if verbose:
-          print(f"Gaussian Mixture model with {criterion} = {gmm.bic(X)}")
-          print(self.model)
-      # Fully automated optimization without precomputed means
-      else:
-        best_params_list, best_values_list = optimizeGMM(X = X,metric = criterion,max_num_components = max_num_components,n_trials=n_trials,seed= self.rand_seed,
-                                                        show_progress_bar =show_progress_bar, precomputed = False)
-        max_diff_idx = _maxprevnextdiff(best_values_list)
-        best_params = best_params_list[max_diff_idx] # find the corresponding best parameters
-        components = max_diff_idx + 1 # +1 to account for the fact that components start from 1
-        gmm = GaussianMixture(n_components= components,
-                              covariance_type= best_params['covariance_type'],
-                              random_state= best_params['random_state'],
-                              init_params= best_params['init_params'],
-                              max_iter=max_iter)
-        self.model = gmm.fit(X)
-        if verbose:
-          print(f"Gaussian Mixture model with {criterion} = {self.model.bic(X)}")
-          print(self.model)
-          plot_bic(max_num_components,best_values_list,components,criterion = criterion)
-
 ### MAIN #####
-adata = sc.read_csv("datasets/dataset1.csv")
-
-pipeline = scgmix(adata,rand_seed=90) # Creating an instance of Preprocess class
-pipeline.preprocess(mads_away=5,feature_selection=False)
-pipeline.dimreduction(plot_result=True,method="UMAP", pc_selection_method="kaiser", use_highly_variable=False)
-study = pipeline.mix(n_trials=50,max_num_components=30,criterion = "BIC",leiden_resolution=1.0,max_iter=10000)
-
-
+adata = sc.read_csv("datasets/dataset2.csv")
+pipeline = scgmix(adata) # Creating an instance of Preprocess class
+pipeline.preprocess(mads_away=5,feature_selection=True)
+pipeline.dimreduction(plot_result=True,method="UMAP", pc_selection_method="variance", use_highly_variable=True)
+print(pipeline.adata)
