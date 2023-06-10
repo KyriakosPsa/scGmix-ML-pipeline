@@ -13,8 +13,8 @@ Library Dependencies:
   - optuna
 
 File Dependancies:
-  - ./utils/plottingutils.py
-  - ./utils/optimizationutils.py
+  - ./utils/plotting.py
+  - ./utils/optimization.py
 
 Please make sure you have these dependencies installed before running the pipeline.
 # Pipeline overview
